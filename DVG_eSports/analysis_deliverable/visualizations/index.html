@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>DVG</title>
+        <link rel="stylesheet" href="https://netdna.bootstrapcdn.com/bootstrap/3.0.3/css/bootstrap.min.css">
+        <script type="text/javascript" src="https://d3js.org/d3.v5.min.js"></script>
+
+        <style>
+            .line {
+                stroke: #E4002B;
+                fill: none;
+                stroke-width: 3;
+            }
+            
+            .axis path,
+            .axis line {
+                fill: none;
+                stroke: black;
+                shape-rendering: crispEdges;
+            }
+            
+            .axis text {
+                font-size: 10px;
+                font-family: sans-serif;
+            }
+            
+            .text-label {
+                font-size: 10px;
+                font-family: sans-serif;
+            }
+            
+            .dot {
+                stroke: #293b47;
+                fill: #7A99AC
+            }
+
+            .regression {
+                stroke-width: 2px;
+                stroke: steelblue;
+                stroke-dasharray: 10,5;
+            }
+            .equation {
+                font-size: 12px;
+                margin-top: 10px;
+                text-align: center;
+		    }
+            </style>
+    </head>
+    <body>
+    <div>
+        <div class="col-md-8">
+            <div class="page-header center">
+                <h1>Factors influencing Win Rate</small></h1>
+                <select name="in_game_stat" id="in_game_stat">
+                    <option value="Kills">kills</option>
+                    <option value="Assists">assists</option>
+                    <option value="Deaths">deaths</option>
+                  </select>
+                  <input type="button" class="btn btn-info" value="in_game_stat" onclick="plot(in_game_stat.value)">
+                <div id="line_graph"></div>
+
+                <div class="equation"></div>
+                <div class="equation"></div> 
+                <div class="regression"></div>
+           
+            </div>
+        </div>
+    </div>
+    <script type="text/javascript" src="line-graph.js"></script>
+    </body>
+</html>
