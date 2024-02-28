@@ -1,0 +1,506 @@
+---
+title: "CS100 Final Project"
+author: "Tasha Kim | Kevin Nguyen"
+date: "12/8/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(plyr)
+library(tidyr)
+library(ggplot2)
+library(GGally)
+library(sf)
+library(factoextra)
+```
+library(raster)
+library(spData)
+library(tmap)
+
+library("rnaturalearth")
+library("rnaturalearthdata")
+
+
+# Background
+
+According to the World Health Organization (WHO), air pollution is linked to 7 million premature deaths across the world. Looking at the breakdown by diseases air pollution causes, we see that 40% is ischaemic heart disease, 40% is stroke, 11% chronic obstructive pulmonary disease, and 6% lung cancer. Interestingly, we see the majority of these diseases caused by air pollution are related to the heart (and lungs). 
+
+In this project, we want to explore how air pollution levels are related to deaths or long-term diseases, and hope to try to classify regions in the world by how badly public health of the people are affected by air pollution.
+
+# Data and Preparation
+
+The dataset we chose to investigate is the Ambient (Outdoor) Air Quality Database, by country and city by the WHO (World Health Organization). <br />
+-URL: https://www.who.int/airpollution/data/cities/en/ 
+
+```{r}
+library(tidyverse)
+air_pol <-read.csv('/Users/tashakim/Downloads/2.5aap_air_quality_database_2018_v14.csv')
+head(air_pol)
+```
+
+```{r}
+air_pol <- select(air_pol,X.2,X.8)
+View(air_pol)
+# Deleting first two rows of the datas
+air_pol2 = air_pol[-c(1,2),]
+View(air_pol2)
+
+class(air_pol2$X.8)
+air_pol2$X.8 <- as.numeric(air_pol2$X.8)
+class(air_pol2$X.8)
+```
+```{r}
+air_pol3 <- aggregate(air_pol2[,'X.8'], list(air_pol2$X.2), mean)
+```
+
+```{r}
+names(air_pol3) <- make.names(c("Country", "Annual Average"))
+head(air_pol3)
+```
+# EDA (Exploratory Data Analysis)
+```{r}
+# Looking at the structure of the dataset
+str(air_pol3)
+```
+```{r}
+summary(air_pol3$Annual.Average)
+```
+We can see that the median across all the countries in the dataset is about 10 micrograms per cubic meter.
+```{r}
+boxplot(air_pol3$Annual.Average, col= "red")
+
+abline(h = 25, col = "blue") # Blue line shows WHO Interim Target 2 value.
+```
+From the boxplot, we can see there is one point on the high end that appear to be an outlier. This point might be worth looking at individually. Note this point exceeds average annual air pollution of 90.
+
+```{r}
+filter(air_pol3, Annual.Average > 90)
+```
+Note: According to the International Journal of Public Health, 57 countries in the world did not set any air quality standards and levels varied greatly by country and by pollutant. Ambient air quality standards for PM2.5 and PM10 poorly compiled with WHO guideline values.
+
+We want to find from our dataset, which countries are failing to comply with WHO guideline values for ambient air quality. 
+
+The annual mean Ambient (outdoor) air quality Global guideline values for PM2.5 (particles smaller than 2.5 micrograms per meters cubed) set by the WHO was 10.
+
+```{r}
+exceed_WHO_guidline <- filter(air_pol3, Annual.Average > 10)
+nrow(exceed_WHO_guidline)
+nrow(air_pol3)
+86/89 *100
+```
+We see that out of a total 89 countries we have information on, 86 countries failed to follow the WHO's Global annual mean value guideline. That is around 97% of countries that were measured.
+
+```{r}
+#Global Interim tartget (IT) 2
+exceed_IT2_guidline <- filter(air_pol3, Annual.Average > 25)
+nrow(exceed_IT2_guidline)
+nrow(exceed_IT2_guidline)/nrow(air_pol3)*100
+```
+Next, we see that out of a total 89 countries we have information on, 65 of these countries failed to meet WHO's Global annual mean Interim Target (IT) 2 value. This is around 73% of countries that were measured.
+
+We can make a quick map of these countries to get a sense of where in the world they are located.
+
+```{r}
+#plot(st_geometry(world), col = air_pol3$Annual.Average) 
+```
+
+```{r}
+exp <- filter(air_pol3, Annual.Average > 90)
+
+library(maps)
+library(mapdata)
+library(ggmap)
+map("world", fill=TRUE, col = "white", bg = "lightblue", ylim = c(-60,90), mar=c(0,0,0,0))
+points(exceed_IT2_guidline, col = "red", pch = 9)
+```
+A histogram is also useful to look at when we want to see more detail on the full distribution on the data. 
+```{r}
+hist(air_pol3$Annual.Average, col = "green", main = "Title: Annual Average Air Quality\n around the World", xlab = "Annual Average PM2.5", ylab = "No. of Countries")
+rug(air_pol3$Annual.Average)
+abline(v = 25, lwd = 2, col = "magenta") # Magenta line shows WHO Interim Target 2 value.
+```
+The distribution is interesting because there appears to be a high concentration of countries in the neighbourhood of 20 to 30 micrograms per cubic meter. We can get a little more detail by using the rug() function, showing us where the actual data points lie. 
+
+The large cluster of data points in the 20 to 30 range is perhaps not surprising in this context. It is uncommon to deserve this behaviour in situations where a global guideline is imposed at a certain level (in our case Interim Target 2 of 25). Note there are still quite a lot of countries above the level of 30, which are worth investigating.
+
+```{r}
+# Grouping countries of our dataset by continent
+library(countrycode)
+df <- data.frame(Country = air_pol3$Country)
+df$continent <- countrycode(sourcevar = df[,"Country"], origin = "country.name", destination = "continent")
+```
+
+```{r}
+# Merging country + continent data with Annual Average air pollution data
+df <- merge(df, air_pol3)
+```
+
+```{r}
+filtered <- filter(df, Annual.Average > 25)
+filtered
+table(filtered$continent) %>% barplot(col = "lightblue", main = "Title: Countries With Over Annual Average Value 25\n (by Continent)", xlab = "Continent", ylab = "Annual Average PM2.5")
+
+filtered <- filter(df, Annual.Average > 50)
+filtered
+table(filtered$continent) %>% barplot(col = "orange", main = "Title: Countries With Over Annual Average Value 50", xlab = "Continent", ylab = "Annual Average PM2.5")
+
+filtered <- filter(df, Annual.Average > 90)
+filtered
+table(filtered$continent) %>% barplot(col = "red", main = "Title: Countries With Over Annual Average Value 90", xlab = "Continent", ylab = "Annual Average PM2.5")
+
+```
+From the barplots, we can see that Asia has high air pollution levels across the board, whereas Africa has low air pollution level across the board. On the other hand, the Americas and Oceania has relatively lower air pollution levels except for some outliers that are greater than an annual average of 90. Europe has high air pollution levels up to over 50, but does not have extremely high annual average values, particularly over 90.
+
+```{r}
+head(df)
+boxplot(Annual.Average ~ continent, data = df, col = "red")
+```
+One of the simplest ways to visualize the annual average PM2.5 pollution values per continent is a multiple boxplot as above. We get a more comprehensive look at the values across the whole board (not at specific thresholds).
+
+# Hypothesis 1: Hypothesis Testing
+
+Hypothesis 1: There is a direct correlation between average life expectancy and air pollution around the world.
+
+In order to test this hypothesis, we choose to use a type of supervising learning used to model a relationship among numerical variables where it is hypothesized that one depends on the others: Regression. Linear Regression is the most widely used tool for establishing a link between two variables, hence we can use this tool to find the relationship between air quality and life expectancy. 
+We let our _predictor_ be the air quality, measured as PM2.5 micrograms per cubic meter, and let our _reponse variable_ be life expectancy by country.
+
+# Model: Linear Regression Model
+```{r}
+life_exp <- read.csv('/Users/tashakim/Downloads/Life Expectancy Data.csv')
+life_exp <- filter(life_exp, Year == 2015)
+head(life_exp)
+
+
+```
+
+```{r}
+Merged <- merge(life_exp, df)
+Merged2 <- select(Merged, Country, Life.expectancy, Annual.Average)
+
+head(Merged2) # Shows average life expectancy and annual average air pollution measure in one data frame.
+```
+
+```{r}
+cor(Merged2$Annual.Average, Merged2$Life.expectancy)
+plot(Merged2$Annual.Average, Merged2$Life.expectancy)
+```
+There seems to be no strong correlation between average life expectancy of a country and the average air quality. The _negative correlation_ shows that there may be a slight indirect relation between long life expectancy and high air pollution.
+
+We run a linear regression, and add a line to best fit our scatterplot using the abline command. We can display the output of our model using the summary command.
+
+```{r}
+
+linear_model <- lm(Merged2$Life.expectancy~ Merged2$Annual.Average)
+linear_model
+```
+
+```{r}
+plot(linear_model)
+abline(linear_model)
+```
+
+```{r}
+summary(linear_model)
+```
+Looking at our summary table, we find that the p-value for the y-intercept is not less than 0.05. Therefore, we conclude that *this predictor is not significant.* 
+
+The R^2 value is 0.01479. This value of R^2 tells us how much of the variation (from the mean) in life expectancy can be explained by variation (from the mean) in air quality. The value only ranges from 0 to 1, and the closer it is to 1, the better the model explains the data. In this example, we have a very low R^2 value, so there are much more significant factors besides air quality that affect a person's life expectancy.
+
+Conclusion: From the linear regression model, we conclude that air pollution levels is *not a good predictor* of life expectancy across the world.
+
+Perhaps we can find a better response variable for our predictor.
+```{r}
+cor(Merged$Adult.Mortality, Merged$Annual.Average)
+cor(Merged$infant.deaths, Merged$Annual.Average)
+cor(Merged$BMI, Merged$Annual.Average)
+cor(Merged$GDP, Merged$Annual.Average)
+
+```
+Since other variables have close to zero correlation, we conclude that from the dataset we have, we are not able to find a single variable that may be highly affected by Annual average air pollution levels across the world.
+
+What are some other conclusions we can draw from the data that we have? We will try to see if tuberculosis, a lung-related disease, varies according to air pollution levels using a linear regression model.
+
+#Hypothesis 2: Air pollution increases the rate at which people die from common lung diseases.
+
+To test this, we compared the concentration of fine particulate matter to the rate at which people die of tuberculosis, a lung disease that the risk of contracting it increasing from direct smoking. Linear regression was also used in order to find whether or not there is a significant correlation.
+```{r}
+tb <- read.csv("/Users/tashakim/Downloads/TBdata.csv")
+exposure <- read.csv("/Users/tashakim/Downloads/exposure.csv")
+```
+
+```{r}
+#Cleaning Tuberculosus data into two columns
+tb <- tb[which(tb$Year == 2018),]
+tb <- tb[,-c(2,3)]
+tb$Deaths.due.to.tuberculosis.among.HIV.negative.people..per.100.000.population.<-    as.character(tb$Deaths.due.to.tuberculosis.among.HIV.negative.people..per.100.000.population.)
+tbcount <- strsplit(tb$Deaths.due.to.tuberculosis.among.HIV.negative.people..per.100.000.population., "\\[")
+tbcount <- matrix(unlist(tbcount))
+tbcount <- tbcount[1:length(tbcount)%%2 == 1,]
+tbcount <- as.numeric(tbcount)
+tb$DeathsPer100k <- tbcount
+exposure <- exposure[-c(1,2),-c(3,4)]
+```
+
+```{r}
+#Cleaning concentration of fine particulate matter into two columns
+exposure$Concentrations.of.fine.particulate.matter..PM2.5. <- as.character(exposure$Concentrations.of.fine.particulate.matter..PM2.5.)
+x <- strsplit(exposure$Concentrations.of.fine.particulate.matter..PM2.5., "\\[")
+x <- matrix(unlist(x))
+x <- x[1:length(x)%%2 == 1,]
+x <- as.numeric(x)
+exposure$Concentration <- x
+exposure <- exposure[,-2]
+tb <- tb[,-2]
+```
+
+```{r}
+linear_model <- lm(exposure$Concentration ~ tb$DeathsPer100k)
+plot(linear_model)
+abline(linear_model)
+summary(linear_model)
+```
+Due to the p-value being low at .002, the significance of the concentration of fine particulate matter on deaths from Tuberculosus is significant.
+
+However, the Adjusted R-squared value is also low at 0.03286, the correlation between the two is not significant as well Therefore, we conclude that neither life expectancy nor tuberculosis across the world can be predicted well by ambient air pollution levels.
+ 
+# Hypothesis 3: Hypothesis Testing
+
+Hypothesis 3: Americans have more air-pollution related deaths compared to the rest of the world.
+
+We will first try to test this hypothesis by performing a *one-sided difference of sample proportions significance test *between the proportion of people in America who die from air pollution related deaths, versus the proportion of people in the world who die from air pollution related deaths.
+
+```{r}
+pollution_world <-read.csv("/Users/tashakim/Downloads/SDGAIRBOD,SDGAIRBODA.csv")
+```
+
+```{r}
+head(pollution_world)
+```
+
+```{r}
+pollution_world_region <-read.csv("/Users/tashakim/Downloads/SDGAIRBOD,SDGAIRBODA (2).csv")
+```
+
+```{r}
+head(pollution_world_region)
+```
+
+```{r}
+pollution_world_region$Ambient.and.household.air.pollution.attributable.death.rate..per.100.000.population.
+```
+We select two outcomes from the report to test whether there is a statistically significant difference between the proportion of people in Americas who die from air pollution, and proportion of people in the world who die from air pollution.
+
+Comparing people in Americas who die from air pollution vs. people in the World who die from air pollution
+First, we choose a confidence level of 95%. 
+
+First, we compute a difference of sample proportions confidence interval at that level.  
+*Confidence Interval*
+```{r}
+p1 <- 32.2/100000 #Ratio of people in Americas dying from air pollution (2016)
+p2 <- 94.8/100000 #Ratio of people in the world dying from air pollution (2016)
+n <- 100000
+
+p1-p2
+
+upper <- p1-p2 + 1.96*(sqrt(p1*(1-p1)/n) + p2*(1-p2)/n)
+lower <- p1-p2 - 1.96*(sqrt(p1*(1-p1)/n) + p2*(1-p2)/n)
+CI <- c(lower, upper)
+
+cat("Confidence interval (for difference of two population proportions): " ,CI)
+```
+Finally, we observe whether the confidence interval contains 0. 
+The confidence interval _does not contain 0. _
+
+Conclusion:
+We conclude that the difference _is significant_ enough to note.
+
+*Difference in Sample proportions significance testing*:
+
+*(1) NULL HYPOTHESIS: The proportion of people that who die in Americas from air pollution is greater than the proportion of people that die in the World from air pollution.*
+i.e., PH > PT
+
+*(2) ALTERNATE HYPOTHESIS: The proportion of people that who die in Americas from air pollution is less than the proportion of people that die in the World from air pollution.*
+i.e. PH < PT
+
+```{r}
+p1
+p2
+```
+
+```{r}
+#We calculate the test statistic:
+#Numerator: (PH - PT) - Pnull = 
+(p1 - p2) - 0
+#Denominator: Standard Error 
+
+```
+
+```{r}
+(p1)*n
+# no. of peopole died in the Americas due to air pollution
+(p2)*n 
+# no. of people died in the world due to air pollution
+
+#Var[PH - PT] = 
+var <- p1*(1-p1)/n + p2*(1-p2)/n
+var
+
+#The standard error is the square root of this variance: 
+se <- sqrt(var)
+
+#t-statistic: 
+-0.000626/se 
+```
+
+Calculating the p-value:
+```{r}
+pnorm(-5.557045, lower.tail = TRUE) #Probability of observing this value of the test statistic = 1.301*10^(-53)
+```
+
+# Hypothesis 4 (Alternate Hypothesis)
+
+Hypothesis 4: Less Americans die from air pollution than people from other parts of the world.
+
+From the earlier hypothesis testing, our p-value was significantly smaller than 0.05, (-1.3719e-08 < 0.05), so we *reject the null hypothesis that the proportion of people that who die in Americas from air pollution is greater than the proportion of people that die in the World from air pollution. *
+
+We take the Alternate Hypothesis that the proportion of people that who die in Americas from air pollution is less than the proportion of people that die in the World from air pollution.
+
+i.e. PH < PT
+
+# Analysis 
+
+We confirmed that less Americans die from air-pollution than the rest of the world. We would like to know why, and in order to figure out what factors correlate most with mortality, we want to find out which regions of the world have the highest air-pollution related deaths.
+
+```{r}
+#First, we clean this dataset
+deaths <- pollution_world[which(pollution_world$X.1 == " Total"),]
+deaths$Ambient.and.household.air.pollution.attributable.death.rate..per.100.000.population. <- as.character(deaths$Ambient.and.household.air.pollution.attributable.death.rate..per.100.000.population.)
+#Strsplit removes unneccessary data
+count <- strsplit(deaths$Ambient.and.household.air.pollution.attributable.death.rate..per.100.000.population., "\\[")
+count <- matrix(unlist(count))
+newcount <- count[1:length(count)%%2 == 1,]
+newcount <- as.numeric(newcount)
+deaths$DeathsPer100k <- newcount
+deaths <- deaths[,-c(2:8)]
+#This shows how DPKR, Georgia, Chad, Bosnia and Herzgovina, and Nigeria are the top 5 countries with air pollution related deaths
+head(deaths[order(-deaths$DeathsPer100k),])
+```
+
+Lets check how these countries rank in air pollution
+
+```{r}
+KoreaPol <- df[67, "Annual.Average"]
+print(KoreaPol)
+GeorgiaPol <- df[28, "Annual.Average"]
+print(GeorgiaPol)
+#Chad not available
+BosniaPol <- df[8, "Annual.Average"]
+print(BosniaPol)
+#Nigeria not available
+```
+
+# Classification: K-NN Classification
+
+To do this, we will try to cluster regions of the world by air pollution levels. K-NN is a good algorithm to do this, since we have data that has been classified or labeled related to air-pollution, but we have similar regions around the world that haven't gotten classified or labeled yet. The algorithm gives us a way to automatically label these regions.
+
+```{r}
+library(class)
+library(caret)
+dfg <- revalue(df$continent, c("Africa" = 1, "Asia" = 2, "Europe" = 3, "Americas" = 4, "Oceania" = 5))
+head(dfg) # We replace the characters in continents to numbers, for the purpose of this algorithm.
+as.numeric(dfg)
+
+df$continent  <- dfg
+View(df)
+```
+
+```{r}
+knn_train <- df %>% select(continent, Annual.Average)
+class(df$Annual.Average)
+class(as.numeric(df$continent))
+
+#30% Of the data used for testing
+knn_test <- knn_train[1:27,]
+knn_label <- df$Annual.Average
+class(knn_label)
+
+knn3_class <- knn(knn_train, knn_test, knn_label, k=3)
+summary(knn3_class)
+```
+We repeat this for k=1, k=5, and k=15. These summaries give us a rough idea of whether our classifiers are predicting an air pollution level that is in the ballpark of the true number.
+
+```{r}
+knn1_class <- knn(knn_train, knn_test, knn_label, k=1)
+knn5_class <- knn(knn_train, knn_test, knn_label, k=5)
+knn15_class <- knn(knn_train, knn_test, knn_label, k=15)
+knn20_class <- knn(knn_train, knn_test, knn_label, k=20)
+```
+
+# Evaluating K-NN Model Accuracy
+```{r}
+accuracy <- function(predictions, ground_truth) {
+  mean(predictions == ground_truth)
+}
+```
+
+```{r}
+accuracy(knn1_class, air_pol3$Annual.Average)
+accuracy(knn3_class, air_pol3$Annual.Average)
+accuracy(knn5_class, air_pol3$Annual.Average)
+accuracy(knn15_class, air_pol3$Annual.Average)
+```
+The accuracies are all below 0.5. A k-value of 3  (k=3) gives the best accuracy, which is just over 30%. This low accuracy shows that k-nn classification is not a very effective way to classify regions of the world. 
+
+Hence we will not use a k-nn model, but turn to a different ML algorithm, the K-means clustering.
+
+# Model: K-Means Clustering
+```{r}
+df2 <- df[,-1]
+rownames(df2)<- df[,1]
+#View(df2)
+```
+
+```{r}
+df2$continent <- as.numeric(df2$continent)
+subset <- df2 %>% select(continent, Annual.Average)
+
+my_clustering <- kmeans(subset, centers = 7)
+
+
+my_clustering$cluster <- as.factor(my_clustering$cluster)
+ggplot(df2, aes(continent, Annual.Average, color = my_clustering$cluster)) + geom_point()
+```
+
+```{r}
+sort(my_clustering$cluster)
+```
+
+```{r}
+fviz_cluster(my_clustering, df2) + ggtitle("Continent vs Annual Average of Pollution")
+```
+
+```{r}
+my_clustering2 <- kmeans(subset, centers = 13)
+my_clustering2$cluster <- as.factor(my_clustering2$cluster)
+ggplot(df, aes(continent, Annual.Average, color = my_clustering2$cluster)) + geom_point()
+fviz_cluster(my_clustering2, df2) + ggtitle("Continent vs Annual Average of Pollution")
+```
+
+```{r}
+my_clustering3 <- kmeans(subset, centers = 3)
+my_clustering3$cluster <- as.factor(my_clustering3$cluster)
+ggplot(df, aes(continent, Annual.Average, color = my_clustering3$cluster)) + geom_point()
+fviz_cluster(my_clustering3, df2) + ggtitle("Continent vs Annual Average of Pollution")
+```
+The k-means clustering gives an effective way of clustering regions of the world by their ambient air pollution levels.
+
+# Conclusion
+
+The project is based on the 89 Countries the World Health Organization (WHO) collected data on regarding the Annual mean concentration of particulate matter of less than 2.5 microns in diameter. In doing so, we have discovered that 97% of the countries examined did not reach the air quality guideline values set by the WHO. 
+
+However, the effect of having lower quality air does not seem to be heavily correlated to average life expectancy, --(Working on comparing to risk of disease) -- Error could also be introduced in our project due to the data being based on cities within the country, and the dates between each city are different yet, we averaged the cities’ data into each country they are from. 
+
+After analyzing this data, we drew two conclusions, the first being People in the USA are less likely to die from air pollution America’s air quality is not the best in the world, but the rate at which people die from air-pollution is less compared to the rest of the world and can be due to multiple factors
+
+ The Guidelines of the WHO indicate that by reducing particulate matter (PM10) pollution from 70 to 20 micrograms per cubic meter (ug/m) we can cut air polluted-related deaths by around 15%. 
